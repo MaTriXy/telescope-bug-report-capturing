@@ -31,8 +31,8 @@ layouts only in the debug builds.
 Permissions
 -----------
 
-By default, Telescope requires `WRITE_EXTERNAL_STORAGE` and `VIBRATE` permissions. To avoid
-requiring these permissions, you can disable screenshots and/or vibration respectively.
+Pre-KitKat, `WRITE_EXTERNAL_STORAGE` is required for saving screenshots. Screenshots can be disabled
+using the configuration options below.
 
 
 
@@ -55,14 +55,14 @@ Download
 
 Download [the latest JAR][1] or grab via Gradle:
 ```groovy
-compile 'com.mattprecious.telescope:telescope:1.1.0@aar'
+compile 'com.mattprecious.telescope:telescope:1.5.0@aar'
 ```
 or Maven:
 ```xml
 <dependency>
   <groupId>com.mattprecious.telescope</groupId>
   <artifactId>telescope</artifactId>
-  <version>1.1.0</version>
+  <version>1.5.0</version>
   <type>apklib</type>
 </dependency>
 ```
