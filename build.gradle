@@ -1,13 +1,21 @@
 allprojects {
   buildscript {
     repositories {
-      mavenCentral()
+      jcenter()
     }
   }
   dependencies {
     repositories {
       mavenCentral()
     }
+  }
+
+  ext {
+    compileSdkVersion = 25
+    buildToolsVersion = '25.0.2'
+
+    supportLibVersion = '25.3.0'
+    butterKnifeVersion = '8.5.1'
   }
 
   group = GROUP

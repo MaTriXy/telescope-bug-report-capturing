@@ -1,8 +1,12 @@
 package com.mattprecious.telescope;
 
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.AsyncTask;
+import android.support.annotation.WorkerThread;
+import android.widget.Toast;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,44 +38,68 @@ public class EmailLens extends Lens {
   }
 
   /** Create the email body. */
-  protected String getBody() {
+  @WorkerThread protected String getBody() {
     return null;
   }
 
   @Override public void onCapture(File screenshot) {
-    Intent intent = new Intent(Intent.ACTION_SEND_MULTIPLE);
-    intent.setType("message/rfc822");
-
-    if (subject != null) {
-      intent.putExtra(Intent.EXTRA_SUBJECT, subject);
-    }
-
-    if (addresses != null) {
-      intent.putExtra(Intent.EXTRA_EMAIL, addresses);
-    }
-
-    String body = getBody();
-    if (body != null) {
-      intent.putExtra(Intent.EXTRA_TEXT, body);
-    }
-
-    Set<Uri> additionalAttachments = getAdditionalAttachments();
-    ArrayList<Uri> attachments = new ArrayList<>(additionalAttachments.size() + 1 /* screenshot */);
-    if (!additionalAttachments.isEmpty()) {
-      attachments.addAll(additionalAttachments);
-    }
-    if (screenshot != null) {
-      attachments.add(Uri.fromFile(screenshot));
-    }
-
-    if (!attachments.isEmpty()) {
-      intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, attachments);
-    }
-
-    context.startActivity(intent);
+    new CreateIntentTask(context, screenshot).execute();
   }
 
-  protected Set<Uri> getAdditionalAttachments() {
+  @WorkerThread protected Set<Uri> getAdditionalAttachments() {
     return Collections.emptySet();
+  }
+
+  private final class CreateIntentTask extends AsyncTask<Void, Void, Intent> {
+    private final Context context;
+    private final File screenshot;
+
+    CreateIntentTask(Context context, File screenshot) {
+      this.context = context;
+      this.screenshot = screenshot;
+    }
+
+    @Override protected Intent doInBackground(Void... params) {
+      Intent intent = new Intent(Intent.ACTION_SEND_MULTIPLE);
+      intent.setType("message/rfc822");
+
+      if (subject != null) {
+        intent.putExtra(Intent.EXTRA_SUBJECT, subject);
+      }
+
+      if (addresses != null) {
+        intent.putExtra(Intent.EXTRA_EMAIL, addresses);
+      }
+
+      String body = getBody();
+      if (body != null) {
+        intent.putExtra(Intent.EXTRA_TEXT, body);
+      }
+
+      Set<Uri> additionalAttachments = getAdditionalAttachments();
+      ArrayList<Uri> attachments = new ArrayList<>(additionalAttachments.size() + 1 /* screen */);
+      if (!additionalAttachments.isEmpty()) {
+        attachments.addAll(additionalAttachments);
+      }
+      if (screenshot != null) {
+        attachments.add(TelescopeFileProvider.getUriForFile(context, screenshot));
+      }
+
+      if (!attachments.isEmpty()) {
+        intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, attachments);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+      }
+
+      return intent;
+    }
+
+    @Override protected void onPostExecute(Intent intent) {
+      try {
+        context.startActivity(intent);
+      } catch (ActivityNotFoundException e) {
+        Toast.makeText(context, "\uD83D\uDD2D No email apps installed!", Toast.LENGTH_SHORT)
+            .show();
+      }
+    }
   }
 }

@@ -1,16 +1,14 @@
-import com.android.builder.core.BuilderConstants;
-
 buildscript {
   dependencies {
-    classpath 'com.android.tools.build:gradle:1.0.0'
+    classpath 'com.android.tools.build:gradle:2.3.0'
   }
 }
 
 apply plugin: 'com.android.library'
 
 android {
-  compileSdkVersion 19
-  buildToolsVersion '21.1.1'
+  compileSdkVersion rootProject.ext.compileSdkVersion
+  buildToolsVersion rootProject.ext.buildToolsVersion
 
   defaultConfig {
     versionName VERSION_NAME
@@ -20,16 +18,17 @@ android {
     sourceCompatibility JavaVersion.VERSION_1_7
     targetCompatibility JavaVersion.VERSION_1_7
   }
+
+  resourcePrefix 'telescope_'
+
+  lintOptions {
+    textOutput 'stdout'
+    textReport true
+  }
 }
 
-android.libraryVariants.all { variant ->
-  def name = variant.buildType.name
-  if (!BuilderConstants.DEBUG.equals(name)) {
-    def task = project.tasks.create "jar${name.capitalize()}", Jar
-    task.dependsOn variant.javaCompile
-    task.from variant.javaCompile.destinationDir
-    artifacts.add('archives', task);
-  }
+dependencies {
+  compile "com.android.support:support-annotations:$supportLibVersion"
 }
 
 apply from: 'gradle-mvn-push.gradle'

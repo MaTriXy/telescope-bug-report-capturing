@@ -1,6 +1,6 @@
 buildscript {
   dependencies {
-    classpath 'com.android.tools.build:gradle:1.0.0'
+    classpath 'com.android.tools.build:gradle:2.3.0'
   }
 }
 
@@ -9,16 +9,33 @@ apply plugin: 'com.android.application'
 dependencies {
   compile project(':telescope')
 
-  compile 'com.android.support:support-v4:20.0.0'
-  compile 'com.jakewharton:butterknife:5.1.2'
+  compile "com.android.support:support-v4:$supportLibVersion"
+  compile "com.android.support:appcompat-v7:$supportLibVersion"
+  compile "com.android.support:design:$supportLibVersion"
+  compile 'com.google.android.gms:play-services-maps:10.2.1'
+  compile "com.jakewharton:butterknife:$butterKnifeVersion"
+  annotationProcessor "com.jakewharton:butterknife-compiler:$butterKnifeVersion"
 }
 
 android {
-  compileSdkVersion 19
-  buildToolsVersion "21.1.1"
+  compileSdkVersion rootProject.ext.compileSdkVersion
+  buildToolsVersion rootProject.ext.buildToolsVersion
 
   defaultConfig {
+    applicationId 'com.mattprecious.telescope.sample'
     versionName VERSION_NAME
+  }
+
+  signingConfigs {
+    debug {
+      storeFile file("debug.keystore")
+    }
+  }
+
+  buildTypes {
+    debug {
+      signingConfig signingConfigs.debug
+    }
   }
 
   compileOptions {
@@ -28,5 +45,7 @@ android {
 
   lintOptions {
     abortOnError false
+    textOutput 'stdout'
+    textReport true
   }
 }

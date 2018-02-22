@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.mattprecious.telescope.sample.ui.SampleToastView
+<com.mattprecious.telescope.sample.ui.SampleMapsView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -9,19 +9,25 @@
       android:id="@+id/telescope"
       android:layout_width="match_parent"
       android:layout_height="match_parent"
-      app:telescope_progressColor="#f44336"
+      app:telescope_pointerCount="3"
+      app:telescope_screenshotMode="canvas"
       >
-    <ScrollView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:orientation="vertical"
         >
       <TextView
-          style="@style/Widget.Telescope.Description"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:drawableTop="@drawable/two_finger_press_styled"
-          android:text="@string/styled_description"
+          android:text="@string/maps_three_finger_description"
+          style="@style/Widget.Telescope.Description"
           />
-    </ScrollView>
+      <com.google.android.gms.maps.MapView
+          android:id="@+id/map"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent"
+          />
+    </LinearLayout>
   </com.mattprecious.telescope.TelescopeLayout>
-</com.mattprecious.telescope.sample.ui.SampleToastView>
+</com.mattprecious.telescope.sample.ui.SampleMapsView>
