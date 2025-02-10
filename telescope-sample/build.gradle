@@ -1,29 +1,22 @@
-buildscript {
-  dependencies {
-    classpath 'com.android.tools.build:gradle:2.3.0'
-  }
-}
-
 apply plugin: 'com.android.application'
 
 dependencies {
-  compile project(':telescope')
+  implementation projects.telescope
 
-  compile "com.android.support:support-v4:$supportLibVersion"
-  compile "com.android.support:appcompat-v7:$supportLibVersion"
-  compile "com.android.support:design:$supportLibVersion"
-  compile 'com.google.android.gms:play-services-maps:10.2.1'
-  compile "com.jakewharton:butterknife:$butterKnifeVersion"
-  annotationProcessor "com.jakewharton:butterknife-compiler:$butterKnifeVersion"
+  implementation libs.androidx.coordinatorLayout
+  implementation libs.androidx.viewPager
+  implementation libs.androidx.appCompat
+  implementation libs.androidx.multidex
+  implementation libs.material
+  implementation libs.playServices.maps
 }
 
 android {
-  compileSdkVersion rootProject.ext.compileSdkVersion
-  buildToolsVersion rootProject.ext.buildToolsVersion
+  namespace 'com.mattprecious.telescope.sample'
 
   defaultConfig {
     applicationId 'com.mattprecious.telescope.sample'
-    versionName VERSION_NAME
+    multiDexEnabled true
   }
 
   signingConfigs {
@@ -36,11 +29,6 @@ android {
     debug {
       signingConfig signingConfigs.debug
     }
-  }
-
-  compileOptions {
-    sourceCompatibility JavaVersion.VERSION_1_7
-    targetCompatibility JavaVersion.VERSION_1_7
   }
 
   lintOptions {

@@ -7,11 +7,9 @@ import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
-import android.support.annotation.NonNull;
 import android.util.AttributeSet;
 import android.widget.FrameLayout;
-import butterknife.BindView;
-import butterknife.ButterKnife;
+import androidx.annotation.NonNull;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapView;
 import com.google.android.gms.maps.OnMapReadyCallback;
@@ -21,21 +19,20 @@ import com.mattprecious.telescope.TelescopeLayout;
 import com.mattprecious.telescope.sample.R;
 
 public class SampleMapsView extends FrameLayout {
-  @BindView(R.id.telescope) TelescopeLayout telescopeView;
-  @BindView(R.id.map) MapView mapView;
-
   public SampleMapsView(Context context, AttributeSet attrs) {
     super(context, attrs);
   }
 
   @Override protected void onFinishInflate() {
     super.onFinishInflate();
-    ButterKnife.bind(this);
+
+    MapView mapView = findViewById(R.id.map);
 
     // Necessary to make MapView work.
     mapView.onCreate(null);
     mapView.onResume();
 
+    TelescopeLayout telescopeView = findViewById(R.id.telescope);
     telescopeView.setLens(new MapsEmailLens(getContext(), mapView));
   }
 
@@ -44,7 +41,7 @@ public class SampleMapsView extends FrameLayout {
     final MapView mapView;
 
     public MapsEmailLens(Context context, MapView mapView) {
-      super(context, "Bug report", "bugs@blackhole.io");
+      super(context, "Bug report", "bugs@example.com");
       this.mapView = mapView;
     }
 

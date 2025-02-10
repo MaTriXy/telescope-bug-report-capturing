@@ -1,6 +1,7 @@
 package com.mattprecious.telescope;
 
 import android.animation.ValueAnimator;
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -25,17 +26,19 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Process;
 import android.os.Vibrator;
-import android.support.annotation.ColorInt;
-import android.support.annotation.IntRange;
-import android.support.annotation.NonNull;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
+import android.view.PixelCopy;
 import android.view.Surface;
 import android.view.View;
+import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import androidx.annotation.ColorInt;
+import androidx.annotation.IntRange;
+import androidx.annotation.NonNull;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -50,7 +53,7 @@ import static android.animation.ValueAnimator.AnimatorUpdateListener;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.graphics.Paint.Style;
 import static android.os.Build.VERSION.SDK_INT;
-import static android.os.Build.VERSION_CODES.LOLLIPOP;
+import static android.view.PixelCopy.SUCCESS;
 import static com.mattprecious.telescope.Preconditions.checkNotNull;
 
 /**
@@ -76,13 +79,11 @@ public class TelescopeLayout extends FrameLayout {
   final WindowManager windowManager;
   private final Vibrator vibrator;
   private final Handler handler = new Handler();
-  private final Runnable trigger = new Runnable() {
-    @Override public void run() {
-      trigger();
-    }
-  };
+  private final Runnable trigger = this::trigger;
   private final IntentFilter requestCaptureFilter;
   private final BroadcastReceiver requestCaptureReceiver;
+  private final IntentFilter serviceStartedFilter;
+  private final BroadcastReceiver serviceStartedReceiver;
 
   private final float halfStrokeWidth;
   private final Paint progressPaint;
@@ -139,11 +140,9 @@ public class TelescopeLayout extends FrameLayout {
     progressPaint.setStrokeWidth(PROGRESS_STROKE_DP * density);
     progressPaint.setStyle(Style.STROKE);
 
-    AnimatorUpdateListener progressUpdateListener = new AnimatorUpdateListener() {
-      @Override public void onAnimationUpdate(ValueAnimator animation) {
-        progressFraction = (float) animation.getAnimatedValue();
-        invalidate();
-      }
+    AnimatorUpdateListener progressUpdateListener = animation -> {
+      progressFraction = (float) animation.getAnimatedValue();
+      invalidate();
     };
 
     progressAnimator = new ValueAnimator();
@@ -157,11 +156,9 @@ public class TelescopeLayout extends FrameLayout {
     doneFraction = 1;
     doneAnimator = ValueAnimator.ofFloat(0, 1);
     doneAnimator.setDuration(DONE_DURATION_MS);
-    doneAnimator.addUpdateListener(new AnimatorUpdateListener() {
-      @Override public void onAnimationUpdate(ValueAnimator animation) {
-        doneFraction = (float) animation.getAnimatedValue();
-        invalidate();
-      }
+    doneAnimator.addUpdateListener(animation -> {
+      doneFraction = (float) animation.getAnimatedValue();
+      invalidate();
     });
 
     if (isInEditMode()) {
@@ -170,45 +167,65 @@ public class TelescopeLayout extends FrameLayout {
       vibrator = null;
       requestCaptureFilter = null;
       requestCaptureReceiver = null;
+      serviceStartedFilter = null;
+      serviceStartedReceiver = null;
       return;
     }
 
     windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
     vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
 
-    if (SDK_INT < LOLLIPOP) {
+    if (SDK_INT < 21) {
       projectionManager = null;
       requestCaptureFilter = null;
       requestCaptureReceiver = null;
+      serviceStartedFilter = null;
+      serviceStartedReceiver = null;
     } else {
       projectionManager =
-          (MediaProjectionManager) context.getApplicationContext().getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+          (MediaProjectionManager) context.getApplicationContext()
+              .getSystemService(Context.MEDIA_PROJECTION_SERVICE);
 
       requestCaptureFilter =
           new IntentFilter(RequestCaptureActivity.getResultBroadcastAction(context));
       requestCaptureReceiver = new BroadcastReceiver() {
-        @TargetApi(Build.VERSION_CODES.LOLLIPOP) @Override
+        @TargetApi(21) @Override
         public void onReceive(Context context, Intent intent) {
           unregisterRequestCaptureReceiver();
 
           int resultCode = intent.getIntExtra(RequestCaptureActivity.RESULT_EXTRA_CODE,
               Activity.RESULT_CANCELED);
-          Intent data = intent.getParcelableExtra(RequestCaptureActivity.RESULT_EXTRA_DATA);
 
-          final MediaProjection mediaProjection =
-              projectionManager.getMediaProjection(resultCode, data);
-          if (mediaProjection == null) {
-            captureCanvasScreenshot();
+          if (resultCode != Activity.RESULT_OK) {
+            captureWindowScreenshot();
             return;
           }
 
+          // The service needs to be running before we start the projection and there's no guarantee
+          // that it will have started once we return from startForegroundService. Rather than using
+          // binders, we'll just bounce the data through another broadcast from the service.
+          registerServiceStartedReceiver();
+
+          Intent data = intent.getParcelableExtra(RequestCaptureActivity.RESULT_EXTRA_DATA);
+          startForegroundService(data);
+        }
+      };
+
+      serviceStartedFilter =
+          new IntentFilter(TelescopeProjectionService.getStartedBroadcastAction(context));
+      serviceStartedReceiver = new BroadcastReceiver() {
+        @TargetApi(21) @Override
+        public void onReceive(Context context, Intent intent) {
+          unregisterServiceStartedReceiver();
+
+          Intent data = intent.getParcelableExtra(TelescopeProjectionService.EXTRA_DATA);
+
+          final MediaProjection mediaProjection =
+              projectionManager.getMediaProjection(Activity.RESULT_OK, data);
+
           if (intent.getBooleanExtra(RequestCaptureActivity.RESULT_EXTRA_PROMPT_SHOWN, true)) {
             // Delay capture until after the permission dialog is gone.
-            postDelayed(new Runnable() {
-              @Override public void run() {
-                captureNativeScreenshot(mediaProjection);
-              }
-            }, 500);
+            postDelayed(() -> captureNativeScreenshot(mediaProjection), 500);
           } else {
             captureNativeScreenshot(mediaProjection);
           }
@@ -410,15 +427,12 @@ public class TelescopeLayout extends FrameLayout {
   void trigger() {
     stop();
 
-    if (vibrate && hasVibratePermission(getContext())) {
-      vibrator.vibrate(VIBRATION_DURATION_MS);
-    }
+    vibrateIfNecessary();
 
     switch (screenshotMode) {
       case SYSTEM:
         if (projectionManager != null
-            && !screenshotChildrenOnly
-            && screenshotTarget == this
+            && shouldCaptureWholeWindow()
             && !windowHasSecureFlag()) {
           // Take a full screenshot of the device. Request permission first.
           registerRequestCaptureReceiver();
@@ -428,7 +442,7 @@ public class TelescopeLayout extends FrameLayout {
 
         // System was requested but isn't supported. Fall through.
       case CANVAS:
-        captureCanvasScreenshot();
+        captureWindowScreenshot();
         break;
       case NONE:
         doneAnimator.start();
@@ -437,6 +451,17 @@ public class TelescopeLayout extends FrameLayout {
       default:
         throw new IllegalStateException("Unknown screenshot mode: " + screenshotMode);
     }
+  }
+
+  @SuppressLint("MissingPermission")
+  private void vibrateIfNecessary() {
+    if (vibrate && hasVibratePermission(getContext())) {
+      vibrator.vibrate(VIBRATION_DURATION_MS);
+    }
+  }
+
+  private boolean shouldCaptureWholeWindow() {
+    return !screenshotChildrenOnly && screenshotTarget == this;
   }
 
   private boolean windowHasSecureFlag() {
@@ -462,27 +487,44 @@ public class TelescopeLayout extends FrameLayout {
     }
   }
 
-  void captureCanvasScreenshot() {
+  private void captureWindowScreenshot() {
     capturingStart();
 
     // Wait for the next frame to be sure our progress bars are hidden.
-    post(new Runnable() {
-      @Override public void run() {
-        View view = getTargetView();
-        view.setDrawingCacheEnabled(true);
-        Bitmap screenshot = Bitmap.createBitmap(view.getDrawingCache());
-        view.setDrawingCacheEnabled(false);
-
-        capturingEnd();
-
-        checkLens();
-        lens.onCapture(screenshot, new BitmapProcessorListener() {
-          @Override public void onBitmapReady(Bitmap screenshot) {
-            new SaveScreenshotTask(screenshot).execute();
+    post(() -> {
+      View view = getTargetView();
+      Window window = findWindow();
+      if (Build.VERSION.SDK_INT >= 26 && shouldCaptureWholeWindow() && window != null) {
+        Bitmap screenshot = Bitmap.createBitmap(window.peekDecorView().getWidth(),
+          window.peekDecorView().getHeight(), Bitmap.Config.ARGB_8888);
+        PixelCopy.request(window, screenshot, copyResult -> {
+          if (copyResult == SUCCESS) {
+            finishCanvasScreenshot(screenshot);
+          } else {
+            Log.e(
+              TAG,
+              "Failed to capture window screenshot (" + copyResult + "). Falling back to canvas."
+            );
+            captureCanvasScreenshot(view);
           }
-        });
+        }, handler);
+      } else {
+        captureCanvasScreenshot(view);
       }
     });
+  }
+
+  private void captureCanvasScreenshot(View view) {
+    view.setDrawingCacheEnabled(true);
+    Bitmap screenshot = Bitmap.createBitmap(view.getDrawingCache());
+    view.setDrawingCacheEnabled(false);
+    finishCanvasScreenshot(screenshot);
+  }
+
+  private void finishCanvasScreenshot(Bitmap screenshot) {
+    capturingEnd();
+    checkLens();
+    lens.onCapture(screenshot, processed -> new SaveScreenshotTask(processed).execute());
   }
 
   private void capturingStart() {
@@ -512,6 +554,22 @@ public class TelescopeLayout extends FrameLayout {
 
     return view;
   }
+
+  private Window findWindow() {
+    Context c = getContext();
+    while (true) {
+      if (c instanceof Activity) {
+        return ((Activity) c).getWindow();
+      }
+
+      if (c instanceof ContextWrapper) {
+        c = ((ContextWrapper) c).getBaseContext();
+      } else {
+        return null;
+      }
+    }
+  }
+
 
   /** Recursive delete of a file or directory. */
   private static void delete(File file) {
@@ -591,6 +649,7 @@ public class TelescopeLayout extends FrameLayout {
 
     @Override protected void onPostExecute(File screenshot) {
       saving = false;
+      stopForegroundService();
 
       checkLens();
       lens.onCapture(screenshot);
@@ -598,11 +657,50 @@ public class TelescopeLayout extends FrameLayout {
   }
 
   private void registerRequestCaptureReceiver() {
-    getContext().registerReceiver(requestCaptureReceiver, requestCaptureFilter);
+    if (SDK_INT >= 33) {
+      getContext().registerReceiver(requestCaptureReceiver, requestCaptureFilter,
+        Context.RECEIVER_EXPORTED);
+    } else {
+      getContext().registerReceiver(requestCaptureReceiver, requestCaptureFilter);
+    }
+  }
+
+  private void registerServiceStartedReceiver() {
+    if (SDK_INT >= 33) {
+      getContext().registerReceiver(serviceStartedReceiver, serviceStartedFilter,
+        Context.RECEIVER_EXPORTED);
+    } else {
+      getContext().registerReceiver(serviceStartedReceiver, serviceStartedFilter);
+    }
   }
 
   void unregisterRequestCaptureReceiver() {
     getContext().unregisterReceiver(requestCaptureReceiver);
+  }
+
+  void unregisterServiceStartedReceiver() {
+    getContext().unregisterReceiver(serviceStartedReceiver);
+  }
+
+  private void startForegroundService(Intent data) {
+    if (SDK_INT >= 29) {
+      // Starting from SDK 29, media projections require a foreground service
+      // see https://github.com/mattprecious/telescope/issues/75
+
+      Intent serviceIntent = new Intent(getContext(), TelescopeProjectionService.class);
+      serviceIntent.putExtra(TelescopeProjectionService.EXTRA_DATA, data);
+      getContext().startForegroundService(serviceIntent);
+    }
+  }
+
+  private void stopForegroundService() {
+    if (SDK_INT >= 29) {
+      // Starting from SDK 29, media projections require a foreground service
+      // see https://github.com/mattprecious/telescope/issues/75
+
+      Intent serviceIntent = new Intent(getContext(), TelescopeProjectionService.class);
+      getContext().stopService(serviceIntent);
+    }
   }
 
   static Handler getBackgroundHandler() {
@@ -616,88 +714,98 @@ public class TelescopeLayout extends FrameLayout {
     return backgroundHandler;
   }
 
-  @TargetApi(LOLLIPOP) void captureNativeScreenshot(final MediaProjection projection) {
+  @TargetApi(21) void captureNativeScreenshot(final MediaProjection projection) {
     capturingStart();
 
     // Wait for the next frame to be sure our progress bars are hidden.
-    post(new Runnable() {
-      @Override public void run() {
-        DisplayMetrics displayMetrics = new DisplayMetrics();
-        windowManager.getDefaultDisplay().getRealMetrics(displayMetrics);
-        final int width = displayMetrics.widthPixels;
-        final int height = displayMetrics.heightPixels;
+    post(() -> {
+      DisplayMetrics displayMetrics = new DisplayMetrics();
+      windowManager.getDefaultDisplay().getRealMetrics(displayMetrics);
+      final int width = displayMetrics.widthPixels;
+      final int height = displayMetrics.heightPixels;
 
-        ImageReader imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
-        Surface surface = imageReader.getSurface();
+      @SuppressLint("WrongConstant")
+      ImageReader imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
+      Surface surface = imageReader.getSurface();
 
-        final VirtualDisplay display =
-            projection.createVirtualDisplay("telescope", width, height, displayMetrics.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION, surface, null, null);
+      MediaProjectionCallback callback = new MediaProjectionCallback(imageReader, surface);
+      projection.registerCallback(callback, null);
 
-        imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
-          @Override public void onImageAvailable(ImageReader reader) {
-            Image image = null;
-            Bitmap bitmap = null;
+      callback.setDisplay(
+        projection.createVirtualDisplay("telescope", width, height, displayMetrics.densityDpi,
+          DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION, surface, null, null)
+      );
 
-            try {
-              image = reader.acquireLatestImage();
+      imageReader.setOnImageAvailableListener(reader -> {
+        Bitmap bitmap = null;
+        try (Image image = reader.acquireLatestImage()) {
+          post(this::capturingEnd);
 
-              post(new Runnable() {
-                @Override public void run() {
-                  capturingEnd();
-                }
-              });
-
-              if (image == null) {
-                return;
-              }
-
-              saving = true;
-
-              Image.Plane[] planes = image.getPlanes();
-              ByteBuffer buffer = planes[0].getBuffer();
-              int pixelStride = planes[0].getPixelStride();
-              int rowStride = planes[0].getRowStride();
-              int rowPadding = rowStride - pixelStride * width;
-
-              bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height,
-                  Bitmap.Config.ARGB_8888);
-              bitmap.copyPixelsFromBuffer(buffer);
-
-              // Trim the screenshot to the correct size.
-              final Bitmap croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height);
-
-              checkLens();
-              lens.onCapture(croppedBitmap, new BitmapProcessorListener() {
-                @Override public void onBitmapReady(Bitmap screenshot) {
-                  new SaveScreenshotTask(croppedBitmap).execute();
-                }
-              });
-            } catch (UnsupportedOperationException e) {
-              Log.e(TAG,
-                  "Failed to capture system screenshot. Setting the screenshot mode to CANVAS.", e);
-              setScreenshotMode(ScreenshotMode.CANVAS);
-              post(new Runnable() {
-                @Override public void run() {
-                  captureCanvasScreenshot();
-                }
-              });
-            } finally {
-              if (bitmap != null) {
-                bitmap.recycle();
-              }
-
-              if (image != null) {
-                image.close();
-              }
-
-              reader.close();
-              display.release();
-              projection.stop();
-            }
+          if (image == null) {
+            return;
           }
-        }, getBackgroundHandler());
-      }
+
+          saving = true;
+
+          Image.Plane[] planes = image.getPlanes();
+          ByteBuffer buffer = planes[0].getBuffer();
+          int pixelStride = planes[0].getPixelStride();
+          int rowStride = planes[0].getRowStride();
+          int rowPadding = rowStride - pixelStride * width;
+
+          bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height,
+              Bitmap.Config.ARGB_8888);
+          bitmap.copyPixelsFromBuffer(buffer);
+
+          // Trim the screenshot to the correct size.
+          final Bitmap croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height);
+
+          checkLens();
+          lens.onCapture(croppedBitmap,
+              processed -> new SaveScreenshotTask(croppedBitmap).execute());
+        } catch (UnsupportedOperationException e) {
+          Log.e(TAG,
+              "Failed to capture system screenshot. Setting the screenshot mode to CANVAS.", e);
+          setScreenshotMode(ScreenshotMode.CANVAS);
+          post(this::captureWindowScreenshot);
+        } finally {
+          if (bitmap != null) {
+            bitmap.recycle();
+          }
+
+          // Even though we're closing the reader in MediaProjectionCallback, we also need to close
+          // it here. The callback is invoked asynchronously, which means we can receive another
+          // image before the reader is closed.
+          imageReader.close();
+
+          projection.stop();
+        }
+      }, getBackgroundHandler());
     });
+  }
+
+  @TargetApi(21)
+  private static class MediaProjectionCallback extends MediaProjection.Callback {
+    private final ImageReader reader;
+    private final Surface surface;
+    private VirtualDisplay display = null;
+
+    public MediaProjectionCallback(ImageReader reader, Surface surface) {
+      this.reader = reader;
+      this.surface = surface;
+    }
+
+    public void setDisplay(VirtualDisplay display) {
+      this.display = display;
+    }
+
+    @Override
+    public void onStop() {
+      reader.close();
+      surface.release();
+      if (display != null) {
+        display.release();
+      }
+    }
   }
 }

@@ -1,6 +1,28 @@
 Change Log
 ==========
 
+Version 2.4.0 *(2024-11-11)*
+----------------------------
+
+* Use `PixelCopy` API for full-screen 'canvas' captures on API 26+. This supports hardware rendering
+  so will no longer crash with hardware bitmaps (#142) and is also able to capture additional
+  details like shadows from elevation.
+
+Version 2.3.0 *(2024-01-25)*
+----------------------------
+
+* Bump compile/target SDK to 34.
+* Add `FOREGROUND_SERVICE_MEDIA_PROJECTION` permission.
+
+Version 2.2.0 *(2019-10-29)*
+----------------------------
+
+* **Requires compileSdk 29**
+* Start a foreground service while capturing on Android 10.
+  * Icon can be overridden in your application by adding a drawable named `telescope_service`.
+* Avoid activity leak in Android 10.
+* Migrate to AndroidX.
+
 Version 2.1.0 *(2016-06-01)*
 ----------------------------
 
